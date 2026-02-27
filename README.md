@@ -7,8 +7,10 @@
 - Root filesystem is mounted read-only: `--ro-bind / /`
 - Current working directory is mounted writable.
 - `~/.codex` is mounted writable.
+- `/tmp/bcodex/<session_id>` is mounted writable for per-session temp files.
 - Common secret paths are masked (for example `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, `~/.netrc`).
-- Temporary/cache/state writes are redirected into `./.bcodex/`.
+- Cache/state/runtime writes are redirected into `./.bcodex/`.
+- `TMPDIR` is set to `/tmp/bcodex/<session_id>`.
 
 ## Install
 
@@ -24,6 +26,18 @@ From this repo:
 
 ```bash
 ./install_fish.sh
+```
+
+Optional: append bcodex awareness prompt into `~/.codex/AGENTS.md`:
+
+```bash
+./install_bash.sh -a
+```
+
+or
+
+```bash
+./install_bash.sh --append-prompt-to-default-agents-md
 ```
 
 Each installer:
@@ -60,6 +74,16 @@ Pass `--help` to Codex (not wrapper):
 bcodex -- --help
 ```
 
+## Agent Awareness
+
+Inside `bcodex`, these environment variables are set:
+
+- `BWRAP_CODEX=1`
+- `BCODEX_SESSION_ID=<session_id>`
+- `BCODEX_TMPDIR=/tmp/bcodex/<session_id>`
+
+You can use `BCODEX_SESSION_ID` for per-session tracing and `BCODEX_TMPDIR` for temp file behavior.
+
 ## Test
 
 Run smoke tests:
@@ -68,7 +92,7 @@ Run smoke tests:
 ./run_test.sh
 ```
 
-The test script checks shell syntax, mount policy construction, sensitive-path masking, and `--yolo` injection.
+The test script checks shell syntax, mount policy construction, session tmp/env markers, sensitive-path masking, installer `-a` behavior, and `--yolo` injection.
 
 ## Notes
 

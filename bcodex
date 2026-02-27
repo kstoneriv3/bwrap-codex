@@ -17,7 +17,9 @@ Behavior:
   - Mounts / read-only.
   - Mounts current working directory writable.
   - Mounts $HOME/.codex writable.
+  - Mounts /tmp/bcodex/<session_id> writable.
   - Masks common sensitive paths (for example $HOME/.ssh).
+  - Sets BWRAP_CODEX=1 and BCODEX_* environment markers.
   - Runs codex with --yolo.
 EOF
 }
@@ -91,14 +93,16 @@ fi
 PWD_ABS="$(pwd)"
 HOME_ABS="${HOME:?HOME is not set}"
 CODEX_HOME="${HOME_ABS}/.codex"
+SESSION_ID="${BCODEX_SESSION_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+TMPDIR_HOST="/tmp/bcodex/${SESSION_ID}"
+TMPDIR_INNER="/tmp/bcodex/${SESSION_ID}"
 
 mkdir -p "${CODEX_HOME}"
-mkdir -p "${PWD_ABS}/.bcodex/tmp"
+mkdir -p "${TMPDIR_HOST}"
 mkdir -p "${PWD_ABS}/.bcodex/cache"
 mkdir -p "${PWD_ABS}/.bcodex/state"
 mkdir -p "${PWD_ABS}/.bcodex/runtime"
 
-TMPDIR_INNER="${PWD_ABS}/.bcodex/tmp"
 XDG_CACHE_INNER="${PWD_ABS}/.bcodex/cache"
 XDG_STATE_INNER="${PWD_ABS}/.bcodex/state"
 XDG_RUNTIME_INNER="${PWD_ABS}/.bcodex/runtime"
@@ -126,8 +130,13 @@ bwrap_args=(
   --proc /proc
   --dev /dev
   --tmpfs /tmp
+  --dir /tmp/bcodex
+  --bind "${TMPDIR_HOST}" "${TMPDIR_INNER}"
   --chdir "${PWD_ABS}"
   --setenv HOME "${HOME_ABS}"
+  --setenv BWRAP_CODEX 1
+  --setenv BCODEX_SESSION_ID "${SESSION_ID}"
+  --setenv BCODEX_TMPDIR "${TMPDIR_INNER}"
   --setenv TMPDIR "${TMPDIR_INNER}"
   --setenv XDG_CACHE_HOME "${XDG_CACHE_INNER}"
   --setenv XDG_STATE_HOME "${XDG_STATE_INNER}"
