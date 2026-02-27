@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+show_help() {
+  cat <<'EOF'
+bcodex: run codex inside a bubblewrap sandbox.
+
+Usage:
+  bcodex [--help] [--print-cmd] [--] [codex args...]
+
+Options:
+  --help       Show this help.
+  --print-cmd  Print the effective bwrap command and exit.
+  --           End wrapper options; remaining args go to codex.
+
+Behavior:
+  - Mounts / read-only.
+  - Mounts current working directory writable.
+  - Mounts $HOME/.codex writable.
+  - Masks common sensitive paths (for example $HOME/.ssh).
+  - Runs codex with --yolo.
+EOF
+}
+
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: required command not found: $1" >&2
+    exit 127
+  fi
+}
+
+PRINT_CMD=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help)
+      show_help
+      exit 0
+      ;;
+    --print-cmd)
+      PRINT_CMD=1
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+need_cmd bwrap
+if [[ "${PRINT_CMD}" -eq 0 ]]; then
+  need_cmd codex
+fi
+
+PWD_ABS="$(pwd)"
+HOME_ABS="${HOME:?HOME is not set}"
+CODEX_HOME="${HOME_ABS}/.codex"
+
+mkdir -p "${CODEX_HOME}"
+mkdir -p "${PWD_ABS}/.bcodex/tmp"
+mkdir -p "${PWD_ABS}/.bcodex/cache"
+mkdir -p "${PWD_ABS}/.bcodex/state"
+mkdir -p "${PWD_ABS}/.bcodex/runtime"
+
+TMPDIR_INNER="${PWD_ABS}/.bcodex/tmp"
+XDG_CACHE_INNER="${PWD_ABS}/.bcodex/cache"
+XDG_STATE_INNER="${PWD_ABS}/.bcodex/state"
+XDG_RUNTIME_INNER="${PWD_ABS}/.bcodex/runtime"
+
+user_has_yolo=0
+for arg in "$@"; do
+  if [[ "${arg}" == "--yolo" ]]; then
+    user_has_yolo=1
+    break
+  fi
+done
+
+codex_cmd=(codex)
+if [[ "${user_has_yolo}" -eq 0 ]]; then
+  codex_cmd+=(--yolo)
+fi
+codex_cmd+=("$@")
+
+bwrap_args=(
+  --die-with-parent
+  --new-session
+  --ro-bind / /
+  --bind "${PWD_ABS}" "${PWD_ABS}"
+  --bind "${CODEX_HOME}" "${CODEX_HOME}"
+  --proc /proc
+  --dev /dev
+  --tmpfs /tmp
+  --chdir "${PWD_ABS}"
+  --setenv HOME "${HOME_ABS}"
+  --setenv TMPDIR "${TMPDIR_INNER}"
+  --setenv XDG_CACHE_HOME "${XDG_CACHE_INNER}"
+  --setenv XDG_STATE_HOME "${XDG_STATE_INNER}"
+  --setenv XDG_RUNTIME_DIR "${XDG_RUNTIME_INNER}"
+)
+
+mask_paths=(
+  "${HOME_ABS}/.ssh"
+  "${HOME_ABS}/.gnupg"
+  "${HOME_ABS}/.aws"
+  "${HOME_ABS}/.kube"
+  "${HOME_ABS}/.config/gcloud"
+  "${HOME_ABS}/.netrc"
+  "${HOME_ABS}/.pypirc"
+  "${HOME_ABS}/.npmrc"
+  "${HOME_ABS}/.docker/config.json"
+)
+
+for p in "${mask_paths[@]}"; do
+  if [[ "${p}" == "${CODEX_HOME}" ]]; then
+    continue
+  fi
+  if [[ ! -e "${p}" ]]; then
+    continue
+  fi
+  if [[ -d "${p}" ]]; then
+    bwrap_args+=(--tmpfs "${p}")
+  else
+    bwrap_args+=(--ro-bind /dev/null "${p}")
+  fi
+done
+
+if [[ "${PRINT_CMD}" -eq 1 ]]; then
+  printf '%q ' bwrap "${bwrap_args[@]}" -- "${codex_cmd[@]}"
+  printf '\n'
+  exit 0
+fi
+
+exec bwrap "${bwrap_args[@]}" -- "${codex_cmd[@]}"
