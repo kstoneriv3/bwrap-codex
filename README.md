@@ -74,3 +74,21 @@ The test script checks shell syntax, mount policy construction, sensitive-path m
 
 - Secret masking is best-effort and path-based.
 - If you need to adjust masked paths, edit `mask_paths` in `bcodex`.
+
+## Troubleshooting
+
+If you see:
+
+```text
+bwrap: setting up uid map: Permission denied
+```
+
+your host is blocking unprivileged user namespaces for non-setuid `bwrap`.
+
+Typical fixes:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+or install/use a setuid-enabled `bwrap` package for your distro.

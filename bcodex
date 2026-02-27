@@ -29,6 +29,38 @@ need_cmd() {
   fi
 }
 
+check_bwrap_runtime() {
+  local tmp_err
+  tmp_err="$(mktemp)"
+  if bwrap --ro-bind / / --proc /proc --dev /dev -- /bin/true 2>"${tmp_err}"; then
+    rm -f "${tmp_err}"
+    return 0
+  fi
+
+  if grep -q "setting up uid map: Permission denied" "${tmp_err}"; then
+    cat >&2 <<'EOF'
+error: bubblewrap cannot create a user namespace on this host.
+reason: "setting up uid map: Permission denied"
+
+This usually means unprivileged user namespaces are restricted (often by AppArmor).
+
+Fix options:
+  1) Enable unprivileged user namespaces:
+     sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  2) Or use a setuid-enabled bubblewrap binary (distro-dependent packaging).
+
+After applying one option, rerun bcodex.
+EOF
+    rm -f "${tmp_err}"
+    exit 126
+  fi
+
+  echo "error: bubblewrap preflight failed:" >&2
+  sed 's/^/  /' "${tmp_err}" >&2 || true
+  rm -f "${tmp_err}"
+  exit 126
+}
+
 PRINT_CMD=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,6 +85,7 @@ done
 need_cmd bwrap
 if [[ "${PRINT_CMD}" -eq 0 ]]; then
   need_cmd codex
+  check_bwrap_runtime
 fi
 
 PWD_ABS="$(pwd)"
